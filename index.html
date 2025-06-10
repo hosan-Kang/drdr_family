@@ -53,42 +53,9 @@
         // '남해' 지역과 '제천' 지역의 숙소 타입별 주중/주말/요일별 가격, 기준 인원, 최대 인원 정보가 포함됩니다.
         const ACCOMMODATION_PRICING = {
             '남해': {
-                'A': {
-                    prices: {
-                        0: 260000, // Sunday (수정됨: 주말에서 평일 가격으로)
-                        1: 260000, // Monday
-                        2: 260000, // Tuesday
-                        3: 260000, // Wednesday
-                        4: 260000, // Thursday
-                        5: 280000, // Friday
-                        6: 280000  // Saturday
-                    },
-                    baseGuests: 2, maxGuests: 4, linkUrl: 'https://sodope.co.kr/space'
-                },
-                'B': {
-                    prices: {
-                        0: 170000, // Sunday (수정됨: 주말에서 평일 가격으로)
-                        1: 170000, // Monday
-                        2: 170000, // Tuesday
-                        3: 170000, // Wednesday
-                        4: 170000, // Thursday
-                        5: 190000, // Friday
-                        6: 190000  // Saturday
-                    },
-                    baseGuests: 2, maxGuests: 2, linkUrl: 'https://sodope.co.kr/space'
-                },
-                'C': {
-                    prices: {
-                        0: 170000, // Sunday (수정됨: 주말에서 평일 가격으로)
-                        1: 170000, // Monday
-                        2: 170000, // Tuesday
-                        3: 170000, // Wednesday
-                        4: 170000, // Thursday
-                        5: 190000, // Friday
-                        6: 190000  // Saturday
-                    },
-                    baseGuests: 2, maxGuests: 2, linkUrl: 'https://sodope.co.kr/space'
-                },
+                'A': { weekday: 260000, weekend: 280000, baseGuests: 2, maxGuests: 4, linkUrl: 'https://sodope.co.kr/space' },
+                'B': { weekday: 170000, weekend: 190000, baseGuests: 2, maxGuests: 2, linkUrl: 'https://sodope.co.kr/space' },
+                'C': { weekday: 170000, weekend: 190000, baseGuests: 2, maxGuests: 2, linkUrl: 'https://sodope.co.kr/space' },
             },
             '제천': {
                 '패밀리룸': {
@@ -182,8 +149,15 @@
             if (!roomInfo) return 0;
 
             const dayOfWeekIndex = date.getDay(); // 0: Sunday, 1: Monday, ... 6: Saturday
-            // 남해와 제천 모두 'prices' 객체를 사용하도록 통합
-            return roomInfo.prices[dayOfWeekIndex] || 0;
+
+            if (location === '남해') {
+                const isWeekend = (dayOfWeekIndex === 0 || dayOfWeekIndex === 6); // 일요일, 토요일
+                return isWeekend ? roomInfo.weekend : roomInfo.weekday;
+            } else if (location === '제천') {
+                // Jecheon has specific prices per dayOfWeekIndex
+                return roomInfo.prices[dayOfWeekIndex] || 0;
+            }
+            return 0;
         };
 
         // 캘린더 날짜 생성 함수
@@ -417,12 +391,11 @@
             };
 
             const handleGuestsDecrement = () => {
-                setTotalGuests(prevGuests => {
-                    const newTotalGuests = Math.max(1, prevGuests - 1);
-                    // Ensure children count does not exceed the new total guests
-                    setChildren4To12(prevChildren => Math.min(newTotalGuests, prevChildren));
-                    return newTotalGuests;
-                });
+                setTotalGuests(prevGuests => Math.max(1, prevGuests - 1));
+                // If reducing totalGuests makes children4To12 greater than totalGuests, adjust children4To12
+                if (children4To12 > Math.max(1, totalGuests - 1)) {
+                    setChildren4To12(Math.max(1, totalGuests - 1));
+                }
             };
 
             // 돌봄이 필요한 자녀 수 증감 핸들러
@@ -444,7 +417,7 @@
             const currentRoomLink = ACCOMMODATION_PRICING[selectedLocation]?.[selectedRoomType]?.linkUrl;
 
             // Google Apps Script Web App URL
-            const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby6YUf1dyNhki39bGOIgEhYlb34tFLyHlctUBz6wlojYAvoWzDlz7DrXWdycE6k2eUw/exec";
+            const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyYIidAD90MK2pT7HXoE_JFn45m73UAPAU8KwTVdO672dXEm_MTNo_UN8EmOpHa2taI/exec";
 
             // 예약 상담하기 버튼 클릭 핸들러
             const handleSubmitBooking = async () => {
