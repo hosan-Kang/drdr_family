@@ -52,10 +52,43 @@
         // 숙소 가격 및 기준 정보
         // '남해' 지역과 '제천' 지역의 숙소 타입별 주중/주말/요일별 가격, 기준 인원, 최대 인원 정보가 포함됩니다.
         const ACCOMMODATION_PRICING = {
-            '남해': {
-                'A': { weekday: 260000, weekend: 280000, baseGuests: 2, maxGuests: 4, linkUrl: 'https://sodope.co.kr/space' },
-                'B': { weekday: 170000, weekend: 190000, baseGuests: 2, maxGuests: 2, linkUrl: 'https://sodope.co.kr/space' },
-                'C': { weekday: 170000, weekend: 190000, baseGuests: 2, maxGuests: 2, linkUrl: 'https://sodope.co.kr/space' },
+             '남해': {
+                'A': {
+                    prices: {
+                        0: 260000, // Sunday (수정됨: 주말에서 평일 가격으로)
+                        1: 260000, // Monday
+                        2: 260000, // Tuesday
+                        3: 260000, // Wednesday
+                        4: 260000, // Thursday
+                        5: 280000, // Friday
+                        6: 280000  // Saturday
+                    },
+                    baseGuests: 2, maxGuests: 4, linkUrl: 'https://sodope.co.kr/space'
+                },
+                'B': {
+                    prices: {
+                        0: 170000, // Sunday (수정됨: 주말에서 평일 가격으로)
+                        1: 170000, // Monday
+                        2: 170000, // Tuesday
+                        3: 170000, // Wednesday
+                        4: 170000, // Thursday
+                        5: 190000, // Friday
+                        6: 190000  // Saturday
+                    },
+                    baseGuests: 2, maxGuests: 2, linkUrl: 'https://sodope.co.kr/space'
+                },
+                'C': {
+                    prices: {
+                        0: 170000, // Sunday (수정됨: 주말에서 평일 가격으로)
+                        1: 170000, // Monday
+                        2: 170000, // Tuesday
+                        3: 170000, // Wednesday
+                        4: 170000, // Thursday
+                        5: 190000, // Friday
+                        6: 190000  // Saturday
+                    },
+                    baseGuests: 2, maxGuests: 2, linkUrl: 'https://sodope.co.kr/space'
+                },
             },
             '제천': {
                 '패밀리룸': {
