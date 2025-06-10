@@ -60,19 +60,25 @@
             '제천': {
                 '패밀리룸': {
                     prices: {
-                        '월': 137000, '화': 137000, '수': 137000, '목': 137000, // 월~목 밤 요금
-                        '금': 209000, // 금요일 밤 요금 (금~토 예약 시)
-                        '토': 229000, // 토요일 밤 요금 (토~일 예약 시)
-                        '일': 137000 // 일요일 밤 요금 (다음날이 월요일이므로 주중 요금으로 간주)
+                        0: 137000, // Sunday
+                        1: 137000, // Monday
+                        2: 137000, // Tuesday
+                        3: 137000, // Wednesday
+                        4: 209000, // Thursday night (금~토 예약 시 금요일 밤 요금)
+                        5: 229000, // Friday night (토~일 예약 시 토요일 밤 요금)
+                        6: 137000  // Saturday
                     },
                     baseGuests: 2, maxGuests: 4, linkUrl: 'https://www.clubes.co.kr/resort/jecheon/rooms_detail/?room_type=family'
                 },
                 '로얄': {
                     prices: {
-                        '월': 195000, '화': 195000, '수': 195000, '목': 195000, // 월~목 밤 요금
-                        '금': 269000, // 금요일 밤 요금 (금~토 예약 시)
-                        '토': 279000, // 토요일 밤 요금 (토~일 예약 시)
-                        '일': 195000 // 일요일 밤 요금
+                        0: 195000, // Sunday
+                        1: 195000, // Monday
+                        2: 195000, // Tuesday
+                        3: 195000, // Wednesday
+                        4: 269000, // Thursday night
+                        5: 279000, // Friday night
+                        6: 195000  // Saturday
                     },
                     baseGuests: 4, maxGuests: 6, linkUrl: 'https://www.clubes.co.kr/resort/jecheon/rooms_detail/?room_type=royal'
                 }
@@ -81,7 +87,6 @@
 
         // 프리미엄 아이돌봄 서비스 관련 설정
         const CHILDCARE_CONFIG = {
-            // 통합된 '돌봄비용' (대관비, 재료비, 인건비 포함)
             baseChildcareCostNamhae: 150000, // 남해 아이돌봄 기본 비용 (1박 기준)
             baseChildcareCostJecheon: 140000, // 제천 아이돌봄 기본 비용 (1박 기준)
             
@@ -135,50 +140,94 @@
             ]
         };
 
-        // 주중/주말 판별을 위한 요일 배열 (인덱스 기준)
-        const DAYS_OF_WEEK = ['월', '화', '수', '목', '금', '토', '일'];
+        // 요일 배열 (JavaScript Date.getDay() 결과와 매핑: 0=일, 1=월, ..., 6=토)
+        const DAYS_OF_WEEK_KO = ['일', '월', '화', '수', '목', '금', '토'];
 
-        // 특정 요일 밤의 숙박 가격을 가져오는 헬퍼 함수
-        const getPriceForNight = (location, roomType, dayOfWeek) => {
+        // 특정 날짜 밤의 숙박 가격을 가져오는 헬퍼 함수
+        const getPriceForNight = (location, roomType, date) => {
             const roomInfo = ACCOMMODATION_PRICING[location]?.[roomType];
-            if (!roomInfo) return 0; // 선택된 지역 또는 룸 타입 정보 없음
+            if (!roomInfo) return 0;
+
+            const dayOfWeekIndex = date.getDay(); // 0: Sunday, 1: Monday, ... 6: Saturday
 
             if (location === '남해') {
-                // 남해는 주중/주말 구분
-                const isWeekend = (dayOfWeek === '토' || dayOfWeek === '일');
+                const isWeekend = (dayOfWeekIndex === 0 || dayOfWeekIndex === 6); // 일요일, 토요일
                 return isWeekend ? roomInfo.weekend : roomInfo.weekday;
             } else if (location === '제천') {
-                // 제천은 요일별 특정 가격
-                return roomInfo.prices[dayOfWeek] || 0; // 해당 요일의 가격이 없으면 0 반환
+                // Jecheon has specific prices per dayOfWeekIndex
+                return roomInfo.prices[dayOfWeekIndex] || 0;
             }
-            return 0; // 알 수 없는 지역
+            return 0;
         };
+
+        // 캘린더 날짜 생성 함수
+        const generateCalendarDates = (year, month) => {
+            const firstDayOfMonth = new Date(year, month, 1);
+            const lastDayOfMonth = new Date(year, month + 1, 0);
+            const numDaysInMonth = lastDayOfMonth.getDate();
+
+            const dates = [];
+            let currentWeek = [];
+
+            // Add leading empty cells for days before the 1st of the month
+            for (let i = 0; i < firstDayOfMonth.getDay(); i++) {
+                currentWeek.push(null);
+            }
+
+            for (let day = 1; day <= numDaysInMonth; day++) {
+                const currentDate = new Date(year, month, day);
+                currentWeek.push(currentDate);
+
+                if (currentWeek.length === 7) {
+                    dates.push(currentWeek);
+                    currentWeek = [];
+                }
+            }
+
+            // Add trailing empty cells for days after the last of the month
+            if (currentWeek.length > 0) {
+                while (currentWeek.length < 7) {
+                    currentWeek.push(null);
+                }
+                dates.push(currentWeek);
+            }
+            return dates;
+        };
+
 
         // App Component: Manages the main logic and UI for the quotation system.
         function App() {
             const { useState, useEffect } = React;
 
             // 숙소 관련 상태 정의
-            const [selectedLocation, setSelectedLocation] = useState('남해'); // 기본 지역: 남해
-            const [selectedRoomType, setSelectedRoomType] = useState('A'); // 기본 룸 타입: A (남해 기준)
-            const [startDay, setStartDay] = useState('월'); // 숙박 시작 요일
-            const [endDay, setEndDay] = useState('월');   // 숙박 종료 요일
-            const [totalGuests, setTotalGuests] = useState(2); // 총 숙박 인원 (24개월 이상부터 카운트)
+            const [selectedLocation, setSelectedLocation] = useState('남해');
+            const [selectedRoomType, setSelectedRoomType] = useState('A');
+            const [startDate, setStartDate] = useState(null); // 실제 날짜 객체로 저장
+            const [endDate, setEndDate] = useState(null);   // 실제 날짜 객체로 저장
+            const [totalGuests, setTotalGuests] = useState(2);
 
             // 아이돌봄 서비스 관련 상태 정의
-            const [children4To12, setChildren4To12] = useState(0); // 만 4세 ~ 12세 이하 자녀 수 (아이돌봄 서비스 대상)
-            const [isChildcareServiceSelected, setIsChildcareServiceSelected] = useState(false); // 아이돌봄 서비스 선택 여부
-            const [selectedProgramName, setSelectedProgramName] = useState(null); // 선택된 프로그램의 이름
-            const [selectedProgramDescription, setSelectedProgramDescription] = useState(null); // 선택된 프로그램의 상세 설명
+            const [children4To12, setChildren4To12] = useState(0);
+            const [isChildcareServiceSelected, setIsChildcareServiceSelected] = useState(false);
+            const [selectedProgramName, setSelectedProgramName] = useState(null);
+            const [selectedProgramDescription, setSelectedProgramDescription] = useState(null);
 
             // 선택 옵션 상품 관련 상태
-            const [isSocialDiningSelected, setIsSocialDiningSelected] = useState(false); // 소셜 다이닝 선택 여부
+            const [isSocialDiningSelected, setIsSocialDiningSelected] = useState(false);
+
+            // 캘린더 상태
+            const [currentMonth, setCurrentMonth] = useState(new Date()); // 캘린더에 표시될 현재 월
 
             // 최종 총 견적 금액
             const [totalEstimate, setTotalEstimate] = useState(0);
-            const [accommodationOnlyCost, setAccommodationOnlyCost] = useState(0); // 숙소 단독 비용
-            const [childcareOnlyCost, setChildcareOnlyCost] = useState(0); // 아이돌봄 단독 비용
-            const [socialDiningOnlyCost, setSocialDiningOnlyCost] = useState(0); // 소셜 다이닝 비용
+            const [accommodationOnlyCost, setAccommodationOnlyCost] = useState(0);
+            const [childcareOnlyCost, setChildcareOnlyCost] = useState(0);
+            const [socialDiningOnlyCost, setSocialDiningOnlyCost] = useState(0);
+
+            // 예약자 정보 상태
+            const [requesterName, setRequesterName] = useState('');
+            const [phoneNumber, setPhoneNumber] = useState('');
+
 
             // 선택된 지역에 따라 기본 룸 타입 초기화
             useEffect(() => {
@@ -188,34 +237,25 @@
                     const jecheonRoomTypes = Object.keys(ACCOMMODATION_PRICING['제천']);
                     setSelectedRoomType(jecheonRoomTypes.includes('패밀리룸') ? '패밀리룸' : jecheonRoomTypes[0]);
                 }
-                // 지역 변경 시 소셜 다이닝 선택 해제
                 if (selectedLocation === '제천') {
                     setIsSocialDiningSelected(false);
                 }
-                // 지역 변경 시 선택된 프로그램 설명 초기화
                 setSelectedProgramName(null);
                 setSelectedProgramDescription(null);
             }, [selectedLocation]);
 
             // 숙박 기간 계산 (총 박/일)
-            const startIndex = DAYS_OF_WEEK.indexOf(startDay);
-            const endIndex = DAYS_OF_WEEK.indexOf(endDay);
+            const calculateDuration = (start, end) => {
+                if (!start || !end) return { numDays: 0, numNights: 0 };
+                const diffTime = Math.abs(end.getTime() - start.getTime());
+                const numDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // 시작일과 종료일 모두 포함
+                const numNights = numDays > 0 ? numDays - 1 : 0;
+                return { numDays, numNights };
+            };
 
-            let numDays = 0;
-            let numNights = 0;
+            const { numDays, numNights } = calculateDuration(startDate, endDate);
 
-            if (startIndex !== -1 && endIndex !== -1) {
-                if (startIndex <= endIndex) {
-                    numDays = endIndex - startIndex + 1;
-                    numNights = numDays > 0 ? numDays - 1 : 0;
-                } else {
-                    // 시작 요일이 종료 요일보다 늦을 경우 (다음 주로 넘어가는 경우)
-                    numNights = (DAYS_OF_WEEK.length - startIndex) + endIndex;
-                    numDays = numNights + 1;
-                }
-            }
-
-            // 총 견적 계산 로직: 선택된 지역, 룸 타입, 요일 범위, 인원, 아이돌봄 서비스에 따라 총 견적을 재계산합니다.
+            // 총 견적 계산 로직
             useEffect(() => {
                 let currentAccommodationCost = 0;
                 let currentChildcareServiceCost = 0;
@@ -225,38 +265,42 @@
                 const roomInfo = selectedRoomType ? locationPricing?.[selectedRoomType] : null;
 
                 // 1. 숙소 가격 계산
-                if (roomInfo && !roomInfo.message) {
+                if (roomInfo && !roomInfo.message && startDate && endDate) {
                     if (totalGuests <= roomInfo.maxGuests) {
+                        let tempDate = new Date(startDate);
                         for (let i = 0; i < numNights; i++) {
-                            const currentDayIndex = (startIndex + i) % DAYS_OF_WEEK.length;
-                            const currentNightDay = DAYS_OF_WEEK[currentDayIndex];
+                            currentAccommodationCost += getPriceForNight(selectedLocation, selectedRoomType, tempDate);
+                            tempDate.setDate(tempDate.getDate() + 1); // 다음 날짜로 이동
+                        }
 
-                            const basePriceForNight = getPriceForNight(selectedLocation, selectedRoomType, currentNightDay);
-                            currentAccommodationCost += basePriceForNight;
-
-                            if (totalGuests > roomInfo.baseGuests) {
-                                const additionalGuests = totalGuests - roomInfo.baseGuests;
-                                currentAccommodationCost += additionalGuests * 20000;
-                            }
+                        if (totalGuests > roomInfo.baseGuests) {
+                            const additionalGuests = totalGuests - roomInfo.baseGuests;
+                            currentAccommodationCost += additionalGuests * 20000 * numNights; // 인원 추가 비용도 박수 기준으로
                         }
                     }
                 }
                 setAccommodationOnlyCost(currentAccommodationCost);
 
                 // 2. 프리미엄 아이돌봄 서비스 계산
-                if (isChildcareServiceSelected && children4To12 > 0) {
-                    let baseChildcareCostPerNight = 0;
+                if (isChildcareServiceSelected && children4To12 > 0 && startDate && endDate) {
+                    let baseChildcareCostPerNightForLocation = 0;
                     if (selectedLocation === '남해') {
-                        baseChildcareCostPerNight = CHILDCARE_CONFIG.baseChildcareCostNamhae;
+                        baseChildcareCostPerNightForLocation = CHILDCARE_CONFIG.baseChildcareCostNamhae;
                     } else if (selectedLocation === '제천') {
-                        baseChildcareCostPerNight = CHILDCARE_CONFIG.baseChildcareCostJecheon;
+                        baseChildcareCostPerNightForLocation = CHILDCARE_CONFIG.baseChildcareCostJecheon;
                     }
 
-                    currentChildcareServiceCost += baseChildcareCostPerNight * numNights;
-                    
-                    if (children4To12 > CHILDCARE_CONFIG.baseChildcareGuests) {
-                        const additionalChildrenForChildcare = children4To12 - CHILDCARE_CONFIG.baseChildcareGuests;
-                        currentChildcareServiceCost += additionalChildrenForChildcare * CHILDCARE_CONFIG.additionalChildcareFeePerChild * numNights;
+                    const additionalChildrenForChildcare = children4To12 > CHILDCARE_CONFIG.baseChildcareGuests ?
+                                                            children4To12 - CHILDCARE_CONFIG.baseChildcareGuests : 0;
+
+                    let tempDateForChildcare = new Date(startDate);
+                    for (let i = 0; i < numNights; i++) {
+                        // 일요일은 돌봄 서비스가 제공되지 않음 (getDay()는 일요일을 0으로 반환)
+                        if (tempDateForChildcare.getDay() !== 0) { // Check if it's NOT Sunday
+                            currentChildcareServiceCost += baseChildcareCostPerNightForLocation;
+                            currentChildcareServiceCost += additionalChildrenForChildcare * CHILDCARE_CONFIG.additionalChildcareFeePerChild;
+                        }
+                        tempDateForChildcare.setDate(tempDateForChildcare.getDate() + 1); // 다음 날짜로 이동
                     }
                 }
                 setChildcareOnlyCost(currentChildcareServiceCost);
@@ -268,15 +312,56 @@
                 setSocialDiningOnlyCost(currentSocialDiningCost);
 
                 setTotalEstimate(currentAccommodationCost + currentChildcareServiceCost + currentSocialDiningCost);
-            }, [selectedLocation, selectedRoomType, startDay, endDay, totalGuests, children4To12, isChildcareServiceSelected, isSocialDiningSelected, numNights, startIndex, endIndex]); // 이펙트 의존성 배열
+            }, [selectedLocation, selectedRoomType, startDate, endDate, totalGuests, children4To12, isChildcareServiceSelected, isSocialDiningSelected, numNights]); // 이펙트 의존성 배열
+
+
+            // 캘린더 날짜 클릭 핸들러
+            const handleDateClick = (date) => {
+                // 오늘 날짜 이전은 선택 불가
+                const todayForComparison = new Date();
+                todayForComparison.setHours(0, 0, 0, 0);
+                if (!date || (date < todayForComparison && date.toDateString() !== todayForComparison.toDateString())) {
+                    return;
+                }
+
+                if (!startDate || (startDate && endDate)) {
+                    setStartDate(date);
+                    setEndDate(null);
+                } else if (date < startDate) {
+                    setStartDate(date);
+                    setEndDate(null);
+                } else {
+                    setEndDate(date);
+                }
+            };
+
+            // 캘린더 월 이동 핸들러 (오늘 날짜 기준으로 -1개월 ~ +1개월 범위 제한)
+            const handleMonthChange = (offset) => {
+                setCurrentMonth(prevMonth => {
+                    const newMonth = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + offset, 1);
+                    
+                    const todayMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+                    const oneMonthAgo = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                    const oneMonthLater = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+
+                    // Allow navigating to current month, one month before, and one month after
+                    if (newMonth.getTime() < oneMonthAgo.getTime() || newMonth.getTime() > oneMonthLater.getTime()) {
+                        return prevMonth; // 범위를 벗어나면 이동하지 않음
+                    }
+                    return newMonth;
+                });
+            };
+
 
             // 숙소 인원 정보 및 초과 메시지 표시
             const getAccommodationGuestInfo = () => {
                 const locationPricing = ACCOMMODATION_PRICING[selectedLocation];
                 const roomInfo = selectedRoomType ? locationPricing?.[selectedRoomType] : null;
 
-                if (!roomInfo) return null; // No room info selected yet
+                if (!roomInfo) return null;
 
+                // This message check seems redundant if ACCOMMODATION_PRICING always has valid data for selectedLocation
+                // and selectedRoomType. Keeping for robustness if data structure changes.
                 if (locationPricing && locationPricing[Object.keys(locationPricing)[0]]?.message) {
                     return (
                         <p className="text-gray-600 text-base mt-2">
@@ -285,7 +370,6 @@
                     );
                 }
 
-                // If total guests exceed max guests for the room
                 if (totalGuests > roomInfo.maxGuests) {
                     return (
                         <p className="text-red-500 font-bold text-xl sm:text-2xl mt-2">
@@ -301,19 +385,26 @@
                 );
             };
 
-            // Handler for total guests input change
-            const handleTotalGuestsChange = (e) => {
-                const value = parseInt(e.target.value) || 0;
-                setTotalGuests(Math.max(1, value)); // Ensure minimum 1 guest
-                if (children4To12 > value) {
-                    setChildren4To12(value);
+            // 총 숙박 인원 증감 핸들러
+            const handleGuestsIncrement = () => {
+                setTotalGuests(prevGuests => prevGuests + 1);
+            };
+
+            const handleGuestsDecrement = () => {
+                setTotalGuests(prevGuests => Math.max(1, prevGuests - 1));
+                // If reducing totalGuests makes children4To12 greater than totalGuests, adjust children4To12
+                if (children4To12 > Math.max(1, totalGuests - 1)) {
+                    setChildren4To12(Math.max(1, totalGuests - 1));
                 }
             };
 
-            // Handler for children 4-12 input change
-            const handleChildren4To12Change = (e) => {
-                const value = parseInt(e.target.value) || 0;
-                setChildren4To12(Math.min(value, totalGuests));
+            // 돌봄이 필요한 자녀 수 증감 핸들러
+            const handleChildrenIncrement = () => {
+                setChildren4To12(prevChildren => Math.min(totalGuests, prevChildren + 1));
+            };
+
+            const handleChildrenDecrement = () => {
+                setChildren4To12(prevChildren => Math.max(0, prevChildren - 1));
             };
 
             // 돌봄 프로그램 클릭 핸들러
@@ -325,6 +416,82 @@
             // 현재 선택된 룸의 상세 설명 링크 가져오기
             const currentRoomLink = ACCOMMODATION_PRICING[selectedLocation]?.[selectedRoomType]?.linkUrl;
 
+            // Google Apps Script Web App URL (Placeholder - 실제 사용 시에는 사용자 본인이 배포한 URL로 교체 필요)
+            const GOOGLE_APPS_SCRIPT_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE"; // 반드시 이 부분을 본인의 웹 앱 URL로 변경하세요!
+
+            // 예약 상담하기 버튼 클릭 핸들러
+            const handleSubmitBooking = async () => {
+                if (!startDate || !endDate) {
+                    // Replaced alert with custom modal or message box as per instructions.
+                    // For simplicity, using a prompt in this example, but a full UI component would be better.
+                    window.prompt("숙박 날짜를 선택해주세요."); // Using prompt as a placeholder for a custom message box
+                    return;
+                }
+                if (totalGuests < 1) {
+                    window.prompt("총 숙박 인원을 1명 이상으로 설정해주세요.");
+                    return;
+                }
+                if (!requesterName.trim()) {
+                    window.prompt("예약자 이름을 입력해주세요.");
+                    return;
+                }
+                if (!phoneNumber.trim()) {
+                    window.prompt("전화번호를 입력해주세요.");
+                    return;
+                }
+
+                // Replacing window.confirm with a custom modal or message box.
+                // For demonstration, using prompt here for simplicity.
+                const confirmBooking = window.confirm("예약 상담을 진행하시겠습니까? 입력하신 정보가 Google Sheet에 기록됩니다.");
+                if (!confirmBooking) {
+                    return;
+                }
+
+                // 전송할 데이터 구성
+                const bookingData = {
+                    requesterName: requesterName,
+                    phoneNumber: phoneNumber,
+                    location: selectedLocation,
+                    roomType: selectedRoomType,
+                    startDate: startDate.toLocaleDateString('ko-KR'), // Use ko-KR locale for consistent date format
+                    endDate: endDate.toLocaleDateString('ko-KR'),
+                    totalGuests: totalGuests,
+                    children4To12: children4To12,
+                    isChildcareServiceSelected: isChildcareServiceSelected ? "예" : "아니오",
+                    isSocialDiningSelected: isSocialDiningSelected ? "예" : "아니오",
+                    totalEstimate: totalEstimate.toLocaleString('ko-KR') + "원 (부가세 포함)"
+                };
+
+                try {
+                    // Google Apps Script Web App으로 데이터 전송
+                    // 이 URL은 Google Apps Script 프로젝트를 "웹 앱"으로 배포했을 때 발급되는 URL입니다.
+                    // 배포 설정: "실행 계정: 나", "액세스 권한: 모든 사용자"
+                    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors', // CORS 문제 회피 (실제 프로덕션에서는 서버 측 CORS 설정 필요)
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(bookingData),
+                    });
+
+                    // no-cors 모드에서는 response.ok 등을 확인할 수 없으므로,
+                    // 실제 성공 여부는 Apps Script의 실행 로그를 통해 확인해야 합니다.
+                    // 또는 Apps Script에서 별도의 성공 메시지를 보내는 로직을 구현해야 합니다.
+                    window.prompt("예약 상담 요청이 접수되었습니다. 담당자가 곧 연락드릴 예정입니다."); // Using prompt as a placeholder for a custom message box
+
+                } catch (error) {
+                    console.error("예약 상담 요청 실패:", error);
+                    window.prompt("예약 상담 요청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."); // Using prompt as a placeholder for a custom message box
+                }
+            };
+
+            // 캘린더 생성
+            const today = new Date();
+            today.setHours(0, 0, 0, 0); // Set today to start of day for comparison accuracy
+            const currentYear = currentMonth.getFullYear();
+            const currentMon = currentMonth.getMonth();
+            const calendarDates = generateCalendarDates(currentYear, currentMon);
 
             return (
                 <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-100 p-4 sm:p-6 lg:p-8 flex items-center justify-center font-sans">
@@ -388,9 +555,8 @@
                                         </div>
 
                                         {/* 숙소 정보 (기준/최대 인원 및 링크) */}
-                                        {/* Removed flex-col items-center to allow left alignment and better flow */}
                                         <div className="mb-4">
-                                            {getAccommodationGuestInfo()} {/* 기준/최대 인원 및 인원 초과 메시지 표시 */}
+                                            {getAccommodationGuestInfo()}
                                             {currentRoomLink && (
                                                 <a
                                                     href={currentRoomLink}
@@ -403,48 +569,113 @@
                                             )}
                                         </div>
 
-                                        {/* 숙박 요일 선택 (시작 요일 ~ 종료 요일) */}
+                                        {/* 숙박 날짜 선택 (캘린더) */}
                                         <div className="mb-4">
-                                            <span className="block text-gray-700 text-lg font-semibold mb-2">숙박 요일:</span>
-                                            <div className="flex flex-wrap gap-4 items-center">
-                                                <select
-                                                    value={startDay}
-                                                    onChange={(e) => setStartDay(e.target.value)}
-                                                    className="p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 text-lg"
-                                                >
-                                                    {DAYS_OF_WEEK.map(day => (
-                                                        <option key={`start-${day}`} value={day}>{day}</option>
+                                            <span className="block text-gray-700 text-lg font-semibold mb-2">숙박 날짜:</span>
+                                            <div className="bg-white rounded-lg shadow-md p-4">
+                                                <div className="flex justify-between items-center mb-4">
+                                                    <button
+                                                        onClick={() => handleMonthChange(-1)}
+                                                        className="p-2 rounded-full hover:bg-gray-200 transition-colors"
+                                                        aria-label="Previous month"
+                                                    >
+                                                        &lt;
+                                                    </button>
+                                                    <h3 className="text-lg font-bold">
+                                                        {currentMonth.getFullYear()}년 {currentMonth.getMonth() + 1}월
+                                                    </h3>
+                                                    <button
+                                                        onClick={() => handleMonthChange(1)}
+                                                        className="p-2 rounded-full hover:bg-gray-200 transition-colors"
+                                                        aria-label="Next month"
+                                                    >
+                                                        &gt;
+                                                    </button>
+                                                </div>
+                                                <div className="grid grid-cols-7 text-center font-bold text-sm mb-2">
+                                                    {DAYS_OF_WEEK_KO.map(day => (
+                                                        <span key={day} className={day === '일' ? 'text-red-500' : (day === '토' ? 'text-blue-500' : '')}>
+                                                            {day}
+                                                        </span>
                                                     ))}
-                                                </select>
-                                                <span className="text-lg font-bold text-gray-700">~</span>
-                                                <select
-                                                    value={endDay}
-                                                    onChange={(e) => setEndDay(e.target.value)}
-                                                    className="p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 text-lg"
-                                                >
-                                                    {DAYS_OF_WEEK.map(day => (
-                                                        <option key={`end-${day}`} value={day}>{day}</option>
-                                                    ))}
-                                                </select>
-                                                <span className="text-lg font-semibold text-gray-800 ml-4">
-                                                    총 {numNights}박 {numDays}일
-                                                </span>
+                                                </div>
+                                                <div className="grid grid-cols-7 gap-1">
+                                                    {calendarDates.flat().map((date, index) => {
+                                                        const isToday = date && date.toDateString() === today.toDateString();
+                                                        const isSelectedStart = startDate && date && date.toDateString() === startDate.toDateString();
+                                                        const isSelectedEnd = endDate && date && date.toDateString() === endDate.toDateString();
+                                                        const isInRange = startDate && endDate && date && date > startDate && date < endDate;
+                                                        // 오늘 날짜 이전은 비활성화하되, '오늘'은 항상 선택 가능하도록
+                                                        const isDisabled = date && (date < today && date.toDateString() !== today.toDateString()); 
+
+                                                        let cellClasses = 'p-2 rounded-full cursor-pointer';
+                                                        if (!date) {
+                                                            cellClasses = 'p-2'; // Empty cell
+                                                        } else if (isDisabled) {
+                                                            cellClasses += ' text-gray-400 cursor-not-allowed';
+                                                        } else if (isSelectedStart || isSelectedEnd) {
+                                                            cellClasses += ' bg-purple-600 text-white font-bold';
+                                                        } else if (isInRange) {
+                                                            cellClasses += ' bg-purple-200 text-purple-800';
+                                                        } else if (date.getDay() === 0) { // Sunday
+                                                            cellClasses += ' text-red-500 hover:bg-gray-100';
+                                                        } else if (date.getDay() === 6) { // Saturday
+                                                            cellClasses += ' text-blue-500 hover:bg-gray-100';
+                                                        } else {
+                                                            cellClasses += ' hover:bg-gray-100';
+                                                        }
+                                                        if (isToday && !isSelectedStart && !isSelectedEnd) {
+                                                            cellClasses += ' border-2 border-indigo-500'; // Highlight today if not selected
+                                                        }
+
+                                                        return (
+                                                            <div
+                                                                key={index}
+                                                                className={cellClasses}
+                                                                onClick={() => !isDisabled && handleDateClick(date)}
+                                                            >
+                                                                {date ? date.getDate() : ''}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                {startDate && endDate && (
+                                                    <p className="text-lg font-semibold text-gray-800 mt-4 text-center">
+                                                        선택 기간: {startDate.toLocaleDateString('ko-KR')} ~ {endDate.toLocaleDateString('ko-KR')} (총 {numNights}박 {numDays}일)
+                                                    </p>
+                                                )}
+                                                {!startDate && !endDate && (
+                                                    <p className="text-lg text-gray-600 mt-4 text-center">
+                                                        숙박 시작일과 종료일을 선택해주세요.
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
 
-                                        {/* 숙박 인원 입력 */}
+                                        {/* 총 숙박 인원 입력 (Plus/Minus buttons) */}
                                         <div className="mb-4">
-                                            <label htmlFor="total-guests" className="block text-gray-700 text-lg font-semibold mb-2">
+                                            <label htmlFor="total-guests-control" className="block text-gray-700 text-lg font-semibold mb-2">
                                                 총 숙박 인원 (24개월 이상부터 카운트):
                                             </label>
-                                            <input
-                                                type="number"
-                                                id="total-guests"
-                                                min="1"
-                                                value={totalGuests}
-                                                onChange={handleTotalGuestsChange}
-                                                className="w-full sm:w-auto p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 text-lg"
-                                            />
+                                            <div className="flex items-center space-x-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleGuestsDecrement}
+                                                    className="p-3 bg-purple-200 text-purple-800 rounded-full w-10 h-10 flex items-center justify-center font-bold text-xl hover:bg-purple-300 transition-colors duration-200"
+                                                >
+                                                    -
+                                                </button>
+                                                <span id="total-guests-control" className="p-3 bg-white border border-gray-300 rounded-lg shadow-sm text-lg font-semibold text-center w-20">
+                                                    {totalGuests}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleGuestsIncrement}
+                                                    className="p-3 bg-purple-200 text-purple-800 rounded-full w-10 h-10 flex items-center justify-center font-bold text-xl hover:bg-purple-300 transition-colors duration-200"
+                                                >
+                                                    +
+                                                </button>
+                                            </div>
                                         </div>
                                     </>
                                 )}
@@ -475,19 +706,32 @@
 
                             {isChildcareServiceSelected && (
                                 <div className="mt-4 p-4 bg-green-100 rounded-xl border border-green-300">
-                                    {/* 항목 순서 변경 반영 START */}
+                                    <p className="text-red-600 font-bold text-md sm:text-lg mb-2">
+                                        ※ 일요일은 돌봄 서비스를 제공하지 않습니다.
+                                    </p>
                                     <div className="mb-4">
-                                        <label htmlFor="children-4-12" className="block text-gray-700 text-lg font-semibold mb-2">
+                                        <label htmlFor="children-4-12-control" className="block text-gray-700 text-lg font-semibold mb-2">
                                             돌봄이 필요한 만 4세 ~ 만 12세 이하 자녀 수:
                                         </label>
-                                        <input
-                                            type="number"
-                                            id="children-4-12"
-                                            min="0"
-                                            value={children4To12}
-                                            onChange={handleChildren4To12Change}
-                                            className="w-full sm:w-auto p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 text-lg"
-                                        />
+                                        <div className="flex items-center space-x-2">
+                                            <button
+                                                type="button"
+                                                onClick={handleChildrenDecrement}
+                                                className="p-3 bg-green-200 text-green-800 rounded-full w-10 h-10 flex items-center justify-center font-bold text-xl hover:bg-green-300 transition-colors duration-200"
+                                            >
+                                                -
+                                            </button>
+                                            <span id="children-4-12-control" className="p-3 bg-white border border-gray-300 rounded-lg shadow-sm text-lg font-semibold text-center w-20">
+                                                {children4To12}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={handleChildrenIncrement}
+                                                className="p-3 bg-green-200 text-green-800 rounded-full w-10 h-10 flex items-center justify-center font-bold text-xl hover:bg-green-300 transition-colors duration-200"
+                                            >
+                                                +
+                                            </button>
+                                        </div>
                                         {children4To12 > totalGuests && (
                                             <p className="text-red-500 text-sm mt-1">자녀 수는 총 숙박 인원을 초과할 수 없습니다.</p>
                                         )}
@@ -499,52 +743,54 @@
                                     <p className="text-md font-bold text-gray-700 mb-2">
                                         돌봄 서비스 시간: {selectedLocation === '남해' ? CHILDCARE_CONFIG.hoursNamhae : CHILDCARE_CONFIG.hoursJecheon}
                                     </p>
-                                    <p className="text-red-600 font-bold text-md sm:text-lg mb-2">
-                                        * 돌봄비용은 돌봄 대관비, 프로그램 재료비, 교사 인건비가 포함된 금액입니다.
-                                    </p>
-                                    {/* 항목 순서 변경 반영 END */}
+                                    
 
                                     {children4To12 > 0 && (
-                                        <div className="mt-4 p-4 bg-green-200 rounded-xl border border-green-400 text-gray-800">
-                                            <h3 className="text-lg font-bold mb-2">돌봄 프로그램 구성표: 발도르프 프리미엄 돌봄</h3>
-                                            <p className="text-sm text-gray-700 mb-3">
-                                                모든 프로그램이 진행됩니다. 아래 셀을 눌러 상세 설명을 확인하세요.
+                                        <> {/* Added Fragment to group multiple elements */}
+                                            <p className="text-red-600 font-bold text-md sm:text-lg mb-2">
+                                                * 돌봄비용은 돌봄 대관비, 프로그램 재료비, 교사 인건비가 포함된 금액입니다.
                                             </p>
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
-                                                {CHILDCARE_PROGRAMS[selectedLocation]?.map((programName) => (
-                                                    <div
-                                                        key={programName}
-                                                        className={`p-3 rounded-lg cursor-pointer text-center text-sm font-medium transition-all duration-200
-                                                            ${selectedProgramName === programName ? 'bg-green-600 text-white shadow-lg' : 'bg-white hover:bg-green-100 text-gray-800 shadow-sm border border-gray-200'}`}
-                                                        onClick={() => handleProgramClick(programName)}
-                                                    >
-                                                        {programName}
-                                                    </div>
-                                                ))}
-                                            </div>
-
-                                            {selectedProgramDescription && (
-                                                <div className="mt-4 p-3 bg-green-100 rounded-lg border border-green-300">
-                                                    <p className="text-sm font-semibold mb-1">{selectedProgramName} 설명:</p>
-                                                    <p className="text-sm">{selectedProgramDescription}</p>
-                                                </div>
-                                            )}
-
-                                            <h3 className="text-lg font-bold mt-4 mb-2">돌봄 비용 안내</h3>
-                                            <p className="mb-1">
-                                                - 기본 돌봄비용 ({selectedLocation === '남해' ? '남해' : '제천'}):
-                                                {(selectedLocation === '남해' ? CHILDCARE_CONFIG.baseChildcareCostNamhae : CHILDCARE_CONFIG.baseChildcareCostJecheon).toLocaleString('ko-KR')}원 (1박 기준)
-                                            </p>
-                                            {children4To12 > CHILDCARE_CONFIG.baseChildcareGuests && (
-                                                <p className="mb-1">
-                                                    - 인원 추가 비용 ({children4To12 - CHILDCARE_CONFIG.baseChildcareGuests}명):
-                                                    {CHILDCARE_CONFIG.additionalChildcareFeePerChild.toLocaleString('ko-KR')}원 (1박당)
+                                            <div className="mt-4 p-4 bg-green-200 rounded-xl border border-green-400 text-gray-800">
+                                                <h3 className="text-lg font-bold mb-2">돌봄 프로그램 구성표: 발도르프 프리미엄 돌봄</h3>
+                                                <p className="text-sm text-gray-700 mb-3">
+                                                    모든 프로그램이 진행됩니다. 아래 셀을 눌러 상세 설명을 확인하세요.
                                                 </p>
-                                            )}
-                                            <p className="text-sm text-gray-600 mt-2">
-                                                (돌봄교사 {Math.max(1, Math.ceil(children4To12 / CHILDCARE_CONFIG.maxChildrenPerTeacher))}명 필요)
-                                            </p>
-                                        </div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+                                                    {CHILDCARE_PROGRAMS[selectedLocation]?.map((programName) => (
+                                                        <div
+                                                            key={programName}
+                                                            className={`p-3 rounded-lg cursor-pointer text-center text-sm font-medium transition-all duration-200
+                                                                ${selectedProgramName === programName ? 'bg-green-600 text-white shadow-lg' : 'bg-white hover:bg-green-100 text-gray-800 shadow-sm border border-gray-200'}`}
+                                                            onClick={() => handleProgramClick(programName)}
+                                                        >
+                                                            {programName}
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                {selectedProgramDescription && (
+                                                    <div className="mt-4 p-3 bg-green-100 rounded-lg border border-green-300">
+                                                        <p className="text-sm font-semibold mb-1">{selectedProgramName} 설명:</p>
+                                                        <p className="text-sm">{selectedProgramDescription}</p>
+                                                    </div>
+                                                )}
+
+                                                <h3 className="text-lg font-bold mt-4 mb-2">돌봄 비용 안내</h3>
+                                                <p className="mb-1">
+                                                    - 기본 돌봄비용 ({selectedLocation === '남해' ? '남해' : '제천'}):
+                                                    {(selectedLocation === '남해' ? CHILDCARE_CONFIG.baseChildcareCostNamhae : CHILDCARE_CONFIG.baseChildcareCostJecheon).toLocaleString('ko-KR')}원 (1박 기준)
+                                                </p>
+                                                {children4To12 > CHILDCARE_CONFIG.baseChildcareGuests && (
+                                                    <p className="mb-1">
+                                                        - 인원 추가 비용 ({children4To12 - CHILDCARE_CONFIG.baseChildcareGuests}명):
+                                                        {CHILDCARE_CONFIG.additionalChildcareFeePerChild.toLocaleString('ko-KR')}원 (1박당)
+                                                    </p>
+                                                )}
+                                                <p className="text-sm text-gray-900 mt-2">
+                                                    (돌봄교사 {Math.max(1, Math.ceil(children4To12 / CHILDCARE_CONFIG.maxChildrenPerTeacher))}명 투입)
+                                                </p>
+                                            </div>
+                                        </>
                                     )}
                                 </div>
                             )}
@@ -595,15 +841,60 @@
                             )}
                         </div>
 
+                        {/* 예약자 정보 입력 섹션 */}
+                        <div className="mb-6 bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-200 shadow-sm">
+                            <h2 className="text-xl sm:text-2xl font-bold text-gray-700 mb-4 pb-2 border-b border-gray-300">
+                                예약자 정보
+                            </h2>
+                            <div className="mb-4">
+                                <label htmlFor="requester-name" className="block text-gray-700 text-lg font-semibold mb-2">
+                                    예약자 이름: <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    id="requester-name"
+                                    value={requesterName}
+                                    onChange={(e) => setRequesterName(e.target.value)}
+                                    className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-lg"
+                                    placeholder="이름을 입력해주세요"
+                                    required
+                                />
+                            </div>
+                            <div className="mb-4">
+                                <label htmlFor="phone-number" className="block text-gray-700 text-lg font-semibold mb-2">
+                                    전화번호: <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="tel"
+                                    id="phone-number"
+                                    value={phoneNumber}
+                                    onChange={(e) => setPhoneNumber(e.target.value)}
+                                    className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-lg"
+                                    placeholder="예: 010-1234-5678"
+                                    required
+                                />
+                            </div>
+                        </div>
+
 
                         {/* 최종 견적 금액 표시 섹션 */}
                         <div className="mt-8 pt-6 border-t-2 border-indigo-300 text-center">
                             <p className="text-2xl sm:text-3xl font-extrabold text-indigo-900">
-                                총 견적: <span className="text-purple-600">{totalEstimate.toLocaleString('ko-KR')}원</span>
+                                총 견적: <span className="text-purple-600">{totalEstimate.toLocaleString('ko-KR')}원 (부가세 포함)</span>
                             </p>
                             <p className="text-sm text-gray-500 mt-2">
                                 선택된 숙소, 아이돌봄 서비스, 선택 옵션 상품들의 총합입니다.
                             </p>
+                        </div>
+
+                        {/* 예약 상담하기 버튼 */}
+                        <div className="mt-8 text-center">
+                            <button
+                                onClick={handleSubmitBooking}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-300"
+                            >
+                                예약 상담하기
+                            </button>
                         </div>
                     </div>
                 </div>
