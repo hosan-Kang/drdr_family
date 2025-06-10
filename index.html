@@ -417,11 +417,12 @@
             };
 
             const handleGuestsDecrement = () => {
-                setTotalGuests(prevGuests => Math.max(1, prevGuests - 1));
-                // If reducing totalGuests makes children4To12 greater than totalGuests, adjust children4To12
-                if (children4To12 > Math.max(1, totalGuests - 1)) {
-                    setChildren4To12(Math.max(1, totalGuests - 1));
-                }
+                setTotalGuests(prevGuests => {
+                    const newTotalGuests = Math.max(1, prevGuests - 1);
+                    // Ensure children count does not exceed the new total guests
+                    setChildren4To12(prevChildren => Math.min(newTotalGuests, prevChildren));
+                    return newTotalGuests;
+                });
             };
 
             // 돌봄이 필요한 자녀 수 증감 핸들러
